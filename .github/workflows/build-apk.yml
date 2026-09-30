@@ -25,32 +25,59 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      # -------------------------------------------------------
+      # 1. UNO CHESS ZIP 자동 탐색 + 압축 해제
+      # -------------------------------------------------------
       - name: Extract UNO CHESS source
         run: |
-          echo "=== Repository files ==="
-          find . -maxdepth 2 -type f -print
+          echo "=== UNO CHESS SOURCE PACK ==="
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+          ZIP_FILE=$(find . -maxdepth 1 -type f \
+            -iname "UNO-CHESS*.zip" \
+            | sort \
+            | tail -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP file not found."
+            echo "ERROR: UNO CHESS ZIP file not found."
             exit 1
           fi
 
-          echo "Found ZIP: $ZIP_FILE"
+          echo "Using source:"
+          echo "$ZIP_FILE"
 
+          rm -rf extracted
           mkdir -p extracted
+
           unzip -o "$ZIP_FILE" -d extracted
 
           echo "=== Extracted files ==="
           find extracted -type f -print
 
-      - name: Find source files
+      # -------------------------------------------------------
+      # 2. 필요한 파일 자동 검색
+      # -------------------------------------------------------
+      - name: Find UNO CHESS source files
         run: |
-          MANIFEST=$(find extracted -type f -name "AndroidManifest.xml" | head -n 1)
-          ACTIVITY=$(find extracted -type f -name "MainActivity.java" | head -n 1)
-          INDEX=$(find extracted -type f -name "index.html" | head -n 1)
-          STYLES=$(find extracted -type f -name "styles.xml" | head -n 1)
+          MANIFEST=$(find extracted -type f \
+            -name "AndroidManifest.xml" | head -n 1)
+
+          ACTIVITY=$(find extracted -type f \
+            -name "MainActivity.java" | head -n 1)
+
+          INDEX=$(find extracted -type f \
+            -name "index.html" | head -n 1)
+
+          STYLES=$(find extracted -type f \
+            -name "styles.xml" | head -n 1)
+
+          ICON=$(find extracted -type f \
+            -name "app_icon.png" | head -n 1)
+
+          echo "Manifest : $MANIFEST"
+          echo "Activity : $ACTIVITY"
+          echo "HTML     : $INDEX"
+          echo "Styles   : $STYLES"
+          echo "Icon     : $ICON"
 
           if [ -z "$MANIFEST" ]; then
             echo "ERROR: AndroidManifest.xml not found."
@@ -72,79 +99,9 @@ jobs:
             exit 1
           fi
 
-          mkdir -p app/src/main/java/com/unochess/game
-          mkdir -p app/src/main/assets
-          mkdir -p app/src/main/res/values
+          if [ -z "$ICON" ]; then
+            echo "ERROR: app_icon.png not found."
+            exit 1
+          fi
 
-          cp "$MANIFEST" app/src/main/AndroidManifest.xml
-          cp "$ACTIVITY" app/src/main/java/com/unochess/game/MainActivity.java
-          cp "$INDEX" app/src/main/assets/index.html
-          cp "$STYLES" app/src/main/res/values/styles.xml
-
-          echo "UNO CHESS source files installed."
-
-      - name: Create root Gradle configuration
-        run: |
-          cat > settings.gradle.kts <<'EOF'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-
-          rootProject.name = "UNOCHESS"
-          include(":app")
-          EOF
-
-          cat > build.gradle.kts <<'EOF'
-          plugins {
-              id("com.android.application") version "8.7.3" apply false
-          }
-          EOF
-
-      - name: Create app Gradle configuration
-        run: |
-          cat > app/build.gradle.kts <<'EOF'
-          plugins {
-              id("com.android.application")
-          }
-
-          android {
-              namespace = "com.unochess.game"
-              compileSdk = 35
-
-              defaultConfig {
-                  applicationId = "com.unochess.game"
-                  minSdk = 26
-                  targetSdk = 35
-                  versionCode = 3
-                  versionName = "0.3.0"
-              }
-          }
-          EOF
-
-      - name: Build UNO CHESS APK
-        run: |
-          gradle :app:assembleDebug --stacktrace
-
-      - name: Locate APK
-        run: |
-          echo "=== APK ==="
-          find app/build/outputs -type f -name "*.apk" -print
-
-      - name: Upload UNO CHESS APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: UNO-CHESS-v0.3-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          # Android
