@@ -25,18 +25,94 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Create Android project structure
+      - name: Extract UNO CHESS source
         run: |
+          echo "=== Repository files ==="
+          find . -maxdepth 2 -type f -print
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: ZIP file not found."
+            exit 1
+          fi
+
+          echo "Found ZIP: $ZIP_FILE"
+
+          mkdir -p extracted
+          unzip -o "$ZIP_FILE" -d extracted
+
+          echo "=== Extracted files ==="
+          find extracted -type f -print
+
+      - name: Find source files
+        run: |
+          MANIFEST=$(find extracted -type f -name "AndroidManifest.xml" | head -n 1)
+          ACTIVITY=$(find extracted -type f -name "MainActivity.java" | head -n 1)
+          INDEX=$(find extracted -type f -name "index.html" | head -n 1)
+          STYLES=$(find extracted -type f -name "styles.xml" | head -n 1)
+
+          if [ -z "$MANIFEST" ]; then
+            echo "ERROR: AndroidManifest.xml not found."
+            exit 1
+          fi
+
+          if [ -z "$ACTIVITY" ]; then
+            echo "ERROR: MainActivity.java not found."
+            exit 1
+          fi
+
+          if [ -z "$INDEX" ]; then
+            echo "ERROR: index.html not found."
+            exit 1
+          fi
+
+          if [ -z "$STYLES" ]; then
+            echo "ERROR: styles.xml not found."
+            exit 1
+          fi
+
           mkdir -p app/src/main/java/com/unochess/game
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/res/values
 
-          cp AndroidManifest.xml app/src/main/AndroidManifest.xml
-          cp MainActivity.java app/src/main/java/com/unochess/game/MainActivity.java
-          cp index.html app/src/main/assets/index.html
-          cp styles.xml app/src/main/res/values/styles.xml
+          cp "$MANIFEST" app/src/main/AndroidManifest.xml
+          cp "$ACTIVITY" app/src/main/java/com/unochess/game/MainActivity.java
+          cp "$INDEX" app/src/main/assets/index.html
+          cp "$STYLES" app/src/main/res/values/styles.xml
 
-      - name: Create app Gradle file
+          echo "UNO CHESS source files installed."
+
+      - name: Create root Gradle configuration
+        run: |
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "UNOCHESS"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+          }
+          EOF
+
+      - name: Create app Gradle configuration
         run: |
           cat > app/build.gradle.kts <<'EOF'
           plugins {
@@ -57,10 +133,16 @@ jobs:
           }
           EOF
 
-      - name: Build APK
-        run: gradle assembleDebug
+      - name: Build UNO CHESS APK
+        run: |
+          gradle :app:assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Locate APK
+        run: |
+          echo "=== APK ==="
+          find app/build/outputs -type f -name "*.apk" -print
+
+      - name: Upload UNO CHESS APK
         uses: actions/upload-artifact@v4
         with:
           name: UNO-CHESS-v0.3-APK
