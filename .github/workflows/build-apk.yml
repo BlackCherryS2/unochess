@@ -25,83 +25,214 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      # -------------------------------------------------------
-      # 1. UNO CHESS ZIP 자동 탐색 + 압축 해제
-      # -------------------------------------------------------
+      # =====================================================
+      # UNO CHESS ZIP 찾기 + 압축 해제
+      # =====================================================
       - name: Extract UNO CHESS source
         run: |
-          echo "=== UNO CHESS SOURCE PACK ==="
+          set -e
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f \
-            -iname "UNO-CHESS*.zip" \
-            | sort \
-            | tail -n 1)
+          echo "Searching UNO CHESS ZIP..."
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "UNO-CHESS*.zip" | sort | tail -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: UNO CHESS ZIP file not found."
+            echo "ERROR: UNO CHESS ZIP not found"
             exit 1
           fi
 
-          echo "Using source:"
-          echo "$ZIP_FILE"
+          echo "SOURCE = $ZIP_FILE"
 
           rm -rf extracted
           mkdir -p extracted
 
           unzip -o "$ZIP_FILE" -d extracted
 
-          echo "=== Extracted files ==="
+          echo "===== EXTRACTED ====="
           find extracted -type f -print
 
-      # -------------------------------------------------------
-      # 2. 필요한 파일 자동 검색
-      # -------------------------------------------------------
-      - name: Find UNO CHESS source files
+      # =====================================================
+      # Android 프로젝트 생성
+      # =====================================================
+      - name: Create Android project
         run: |
-          MANIFEST=$(find extracted -type f \
-            -name "AndroidManifest.xml" | head -n 1)
+          set -e
 
-          ACTIVITY=$(find extracted -type f \
-            -name "MainActivity.java" | head -n 1)
+          MANIFEST=$(find extracted -type f -name "AndroidManifest.xml" | head -n 1)
+          ACTIVITY=$(find extracted -type f -name "MainActivity.java" | head -n 1)
+          INDEX=$(find extracted -type f -name "index.html" | head -n 1)
+          STYLES=$(find extracted -type f -name "styles.xml" | head -n 1)
+          ICON=$(find extracted -type f -name "app_icon.png" | head -n 1)
 
-          INDEX=$(find extracted -type f \
-            -name "index.html" | head -n 1)
+          echo "MANIFEST = $MANIFEST"
+          echo "ACTIVITY = $ACTIVITY"
+          echo "INDEX = $INDEX"
+          echo "STYLES = $STYLES"
+          echo "ICON = $ICON"
 
-          STYLES=$(find extracted -type f \
-            -name "styles.xml" | head -n 1)
+          for FILE in "$MANIFEST" "$ACTIVITY" "$INDEX" "$STYLES" "$ICON"
+          do
+            if [ -z "$FILE" ]; then
+              echo "ERROR: Required UNO CHESS source file missing."
+              exit 1
+            fi
+          done
 
-          ICON=$(find extracted -type f \
-            -name "app_icon.png" | head -n 1)
+          rm -rf app
 
-          echo "Manifest : $MANIFEST"
-          echo "Activity : $ACTIVITY"
-          echo "HTML     : $INDEX"
-          echo "Styles   : $STYLES"
-          echo "Icon     : $ICON"
+          mkdir -p app/src/main/java/com/unochess/game
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/mipmap-mdpi
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
 
-          if [ -z "$MANIFEST" ]; then
-            echo "ERROR: AndroidManifest.xml not found."
+          cp "$MANIFEST" app/src/main/AndroidManifest.xml
+          cp "$ACTIVITY" app/src/main/java/com/unochess/game/MainActivity.java
+          cp "$INDEX" app/src/main/assets/index.html
+          cp "$STYLES" app/src/main/res/values/styles.xml
+
+          # UNO CHESS 로고를 실제 Android 앱 아이콘으로 등록
+          cp "$ICON" app/src/main/res/mipmap-mdpi/ic_launcher.png
+          cp "$ICON" app/src/main/res/mipmap-hdpi/ic_launcher.png
+          cp "$ICON" app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          cp "$ICON" app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          cp "$ICON" app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          echo "Android source created successfully."
+
+      # =====================================================
+      # Gradle 프로젝트 구성
+      # =====================================================
+      - name: Create Gradle configuration
+        run: |
+          set -e
+
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "UNOCHESS"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+          }
+          EOF
+
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+          }
+
+          android {
+              namespace = "com.unochess.game"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.unochess.game"
+
+                  minSdk = 26
+                  targetSdk = 35
+
+                  versionCode = 81
+                  versionName = "0.8.1"
+              }
+
+              buildTypes {
+                  getByName("debug") {
+                      isMinifyEnabled = false
+                  }
+              }
+          }
+          EOF
+
+          echo "Gradle configuration created."
+
+      # =====================================================
+      # 빌드 전 검사
+      # =====================================================
+      - name: Verify project
+        run: |
+          set -e
+
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/unochess/game/MainActivity.java
+          test -f app/src/main/assets/index.html
+          test -f app/src/main/res/values/styles.xml
+          test -f app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          test -f app/build.gradle.kts
+
+          echo "=============================="
+          echo " UNO CHESS PROJECT READY"
+          echo "=============================="
+
+          find app/src/main -type f -print
+
+      # =====================================================
+      # 실제 APK 빌드
+      # =====================================================
+      - name: Build UNO CHESS APK
+        run: |
+          set -e
+
+          echo "=============================="
+          echo " BUILDING UNO CHESS"
+          echo "=============================="
+
+          gradle :app:assembleDebug --no-daemon --stacktrace
+
+      # =====================================================
+      # 생성된 APK 검사 + 이름 변경
+      # =====================================================
+      - name: Prepare UNO CHESS APK
+        run: |
+          set -e
+
+          ORIGINAL="app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$ORIGINAL" ]; then
+            echo "ERROR: app-debug.apk was not generated."
+            find app/build -type f || true
             exit 1
           fi
 
-          if [ -z "$ACTIVITY" ]; then
-            echo "ERROR: MainActivity.java not found."
-            exit 1
-          fi
+          mkdir -p release
 
-          if [ -z "$INDEX" ]; then
-            echo "ERROR: index.html not found."
-            exit 1
-          fi
+          cp "$ORIGINAL" release/UNO-CHESS-v0.8.1.apk
 
-          if [ -z "$STYLES" ]; then
-            echo "ERROR: styles.xml not found."
-            exit 1
-          fi
+          echo "=============================="
+          echo " APK CREATED SUCCESSFULLY"
+          echo "=============================="
 
-          if [ -z "$ICON" ]; then
-            echo "ERROR: app_icon.png not found."
-            exit 1
-          fi
+          ls -lh release/UNO-CHESS-v0.8.1.apk
 
-          # Android
+      # =====================================================
+      # GitHub Artifact 업로드
+      # =====================================================
+      - name: Upload UNO CHESS APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UNO-CHESS-v0.8.1-APK
+          path: release/UNO-CHESS-v0.8.1.apk
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
